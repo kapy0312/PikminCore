@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pikmin Growth Center</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/htm@3.1.1/dist/htm.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #e0f2e9;
+            background-image: radial-gradient(#a3d9b1 2px, transparent 2px);
+            background-size: 40px 40px;
+            color: #2d3748;
+        }
+
+        .glassmorphism {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+        }
+
+        @keyframes jump {
+
+            0%,
+            100% {
+                transform: translateY(0) scale(1);
+            }
+
+            50% {
+                transform: translateY(-15px) scale(1.05);
+            }
+        }
+
+        .animate-jump {
+            animation: jump 0.4s ease-in-out;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-8px);
+            }
+        }
+
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        .heart-clip {
+            clip-path: path('M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z');
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/javascript">
+        const { useState, useEffect, useCallback, createElement } = React;
+        const html = htm.bind(createElement);
+
+        const GAS_DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbxVNGtjwbAKOI2T7cluSNgGHxqIbtDidhIT3OSBuubfxP-l81vYzKCnVGsv78fPLFFieg/exec'; // 部署後替換
+        const MAX_ENERGY = 20;
+        const GIFT_DURATION_MS = 30 * 60 * 1000; // 禮物倒數 30 分鐘 (毫秒)
+        
+        // SVG 生成器 (Placeholder)，未來可輕易替換為 './assets/red_base.png' 等實體路徑
+        const generateSvg = (bg, text) => `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${encodeURIComponent(bg)}" rx="20"/><text x="50" y="50" font-family="sans-serif" font-weight="bold" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">${encodeURIComponent(text)}</text></svg>`;
+
+        // AssetMap: 預留多造型架構 (Array)
+        // const AssetMap = {
+        //     red: { colorCode: '#EF4444', name: '紅皮克敏', pot: generateSvg('#EF4444', '紅/花盆'), base: generateSvg('#EF4444', '紅/基本'), decors: ['chef_hat', 'sticker'] },
+        //     yellow: { colorCode: '#F59E0B', name: '黃皮克敏', pot: generateSvg('#F59E0B', '黃/花盆'), base: generateSvg('#F59E0B', '黃/基本'), decors: ['plane', 'sticker'] },
+        //     blue: { colorCode: '#3B82F6', name: '藍皮克敏', pot: generateSvg('#3B82F6', '藍/花盆'), base: generateSvg('#3B82F6', '藍/基本'), decors: ['bottle', 'sticker'] },
+        //     purple: { colorCode: '#8B5CF6', name: '紫皮克敏', pot: generateSvg('#8B5CF6', '紫/花盆'), base: generateSvg('#8B5CF6', '紫/基本'), decors: ['macaron', 'sticker'] },
+        //     white: { colorCode: '#D1D5DB', name: '白皮克敏', pot: generateSvg('#D1D5DB', '白/花盆'), base: generateSvg('#D1D5DB', '白/基本'), decors: ['coin', 'sticker'] },
+        //     rock: { colorCode: '#4B5563', name: '岩石皮克敏', pot: generateSvg('#4B5563', '岩/花盆'), base: generateSvg('#4B5563', '岩/基本'), decors: ['crystal', 'sticker'] },
+        //     winged: { colorCode: '#EC4899', name: '羽翅皮克敏', pot: generateSvg('#EC4899', '羽/花盆'), base: generateSvg('#EC4899', '羽/基本'), decors: ['ribbon', 'sticker'] },
+        //     ice: { colorCode: '#06B6D4', name: '冰凍皮克敏', pot: generateSvg('#06B6D4', '冰/花盆'), base: generateSvg('#06B6D4', '冰/基本'), decors: ['snowflake', 'sticker'] }
+        // };
+
+        const AssetMap = {
+            red: {
+                colorCode: '#EF4444',
+                name: '紅皮克敏',
+                pot: './assets/red_pot.png',
+                base: './assets/red_base.png',
+                decors: ['chef_hat', 'cup'],
+                decorImages: {
+                    'chef_hat': './assets/red_chef_hat.png',
+                    'cup': './assets/red_cup.png'
+                }
+            },
+            yellow: {
+                colorCode: '#F59E0B',
+                name: '黃皮克敏',
+                pot: './assets/yellow_pot.png',
+                base: './assets/yellow_base.png',
+                decors: ['chef_hat', 'cup'],
+                decorImages: {
+                    'chef_hat': './assets/yellow_chef_hat.png',
+                    'cup': './assets/yellow_cup.png'
+                }
+            },
+            blue: {
+                colorCode: '#3B82F6',
+                name: '藍皮克敏',
+                pot: './assets/blue_pot.png',
+                base: './assets/blue_base.png',
+                decors: ['chef_hat', 'cup'],
+                decorImages: {
+                    'chef_hat': './assets/blue_chef_hat.png',
+                    'cup': './assets/blue_cup.png'
+                }
+            },
+            purple: {
+                colorCode: '#8B5CF6',
+                name: '紫皮克敏',
+                pot: './assets/purple_pot.png',
+                base: './assets/purple_base.png',
+                decors: ['chef_hat', 'cup'],
+                decorImages: {
+                    'chef_hat': './assets/purple_chef_hat.png',
+                    'cup': './assets/purple_cup.png'
+                }
+            },
+            white: {
+                colorCode: '#D1D5DB',
+                name: '白皮克敏',
+                pot: './assets/white_pot.png',
+                base: './assets/white_base.png',
+                decors: ['chef_hat', 'cup'],
+                decorImages: {
+                    'chef_hat': './assets/white_chef_hat.png',
+                    'cup': './assets/white_cup.png'
+                }
+            },
+            rock: {
+                colorCode: '#4B5563',
+                name: '岩石皮克敏',
+                pot: './assets/rock_pot.png',
+                base: './assets/rock_base.png',
+                decors: ['chef_hat', 'cup'],
+                decorImages: {
+                    'chef_hat': './assets/rock_chef_hat.png',
+                    'cup': './assets/rock_cup.png'
+                }
+            },
+            winged: {
+                colorCode: '#EC4899',
+                name: '羽翅皮克敏',
+                pot: './assets/winged_pot.png',
+                base: './assets/winged_base.png',
+                decors: ['chef_hat', 'cup'],
+                decorImages: {
+                    'chef_hat': './assets/winged_chef_hat.png',
+                    'cup': './assets/winged_cup.png'
+                }
+            },
+            ice: {
+                colorCode: '#06B6D4',
+                name: '冰凍皮克敏',
+                pot: './assets/ice_pot.png',
+                base: './assets/ice_base.png',
+                decors: ['chef_hat', 'kimchi'],
+                decorImages: {
+                    'chef_hat': './assets/ice_chef_hat.png',
+                    'kimchi': './assets/ice_kimchi.png'
+                }
+            }
+        };
+
+        const generateDecorSvg = (bg, type) => generateSvg(bg, `造型:\n${type}`);
+
+        // 好感度元件 (4 顆心，每顆 5 點能量)
+        const HeartProgress = ({ energy }) => {
+            const hearts = [0, 1, 2, 3].map(index => {
+                const threshold = index * 5;
+                let fillPercent = 0;
+                if (energy > threshold) {
+                    fillPercent = Math.min(100, ((energy - threshold) / 5) * 100);
+                }
+                return html`
+                    <div key=${index} className="relative w-8 h-8 bg-gray-300 heart-clip overflow-hidden">
+                        <div className="absolute bottom-0 left-0 w-full bg-red-500 transition-all duration-300 ease-out" 
+                             style=${{ height: `${fillPercent}%` }}></div>
+                    </div>
+                `;
+            });
+            return html`<div className="flex gap-2">${hearts}</div>`;
+        };
+
+        function App() {
+            const [groups, setGroups] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [newGroupName, setNewGroupName] = useState('');
+            const [selectedGroup, setSelectedGroup] = useState(null);
+            const [animating, setAnimating] = useState(false);
+            const [now, setNow] = useState(Date.now()); // 用於驅動倒數計時器渲染
+
+            // 時鐘滴答器：每秒更新當前時間
+            useEffect(() => {
+                const timer = setInterval(() => setNow(Date.now()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            // 監聽並觸發進化：當超過禮物倒數時間，自動發送更新至後端
+            useEffect(() => {
+                groups.forEach(group => {
+                    if (group.energy >= MAX_ENERGY && group.activeDecor && group.activeDecor.startsWith('GIFT_')) {
+                        const parts = group.activeDecor.split('_');
+                        const timestamp = parseInt(parts[1], 10);
+                        const finalDecor = parts[2];
+
+                        if (Date.now() - timestamp >= GIFT_DURATION_MS) {
+                            const updatedGroup = { ...group, activeDecor: finalDecor };
+                            setGroups(prev => prev.map(g => g.id === group.id ? updatedGroup : g));
+
+                            if (selectedGroup && selectedGroup.id === group.id) {
+                                setSelectedGroup(updatedGroup);
+                            }
+
+                            // 異步寫入最終造型，避免重整後又變回禮物
+                            fetch(GAS_DEPLOY_URL, {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    action: 'updateEnergy',
+                                    id: group.id,
+                                    energy: group.energy,
+                                    feedableEnergy: group.feedableEnergy,
+                                    activeDecor: finalDecor
+                                })
+                            });
+                        }
+                    }
+                });
+            }, [groups, now, selectedGroup]);
+
+            const fetchAllData = useCallback(async () => {
+                setLoading(true);
+                try {
+                    const res = await fetch(`${GAS_DEPLOY_URL}?action=getAll`);
+                    const json = await res.json();
+                    if (json.status === 200) setGroups(json.data.groups);
+                } catch (err) { console.error(err); }
+                setLoading(false);
+            }, []);
+
+            useEffect(() => {
+                if (GAS_DEPLOY_URL === 'YOUR_GAS_WEB_APP_URL_HERE') {
+                    alert("請配置 GAS_DEPLOY_URL");
+                    setLoading(false);
+                    return;
+                }
+                fetchAllData();
+            }, [fetchAllData]);
+
+            const handleAddGroup = async () => {
+                if (!newGroupName.trim()) return;
+                setLoading(true);
+                try {
+                    const res = await fetch(GAS_DEPLOY_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'addGroup', name: newGroupName })
+                    });
+                    const json = await res.json();
+                    if (json.status === 200) {
+                        setNewGroupName('');
+                        await fetchAllData();
+                    }
+                } catch (e) { console.error(e); }
+                setLoading(false);
+            };
+
+            const handleDeleteGroup = async (id) => {
+                if (!confirm('確定要刪除此組別嗎？')) return;
+                setGroups(prev => prev.filter(g => g.id !== id));
+                setSelectedGroup(null);
+                fetch(GAS_DEPLOY_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'deleteGroup', id })
+                });
+            };
+
+            const handleFeed = () => {
+                if (!selectedGroup || selectedGroup.feedableEnergy <= 0 || animating) return;
+
+                setAnimating(true);
+                setTimeout(() => setAnimating(false), 400); // 點擊特效時長
+
+                const currentEnergy = selectedGroup.energy;
+                const nextEnergy = currentEnergy + 1;
+                const nextFeedable = selectedGroup.feedableEnergy - 1;
+
+                let activeDecor = selectedGroup.activeDecor;
+
+                // 觸發造型進化邏輯 (20 滿好感)
+                if (nextEnergy === MAX_ENERGY && !activeDecor) {
+                    const colorData = AssetMap[selectedGroup.colorKey];
+                    const randomDecor = colorData.decors[Math.floor(Math.random() * colorData.decors.length)];
+                    // 組合狀態機：標記為禮物階段，寫入起始時間戳記與目標造型
+                    activeDecor = `GIFT_${Date.now()}_${randomDecor}`;
+                    alert(`✨ 滿好感度！皮克敏準備去拿取禮物 (預計耗時 30 分鐘)`);
+                } else if (currentEnergy === 0) {
+                    // 孵化事件
+                    alert(`🌱 花盆孵化了！`);
+                }
+
+                const updatedGroup = { ...selectedGroup, energy: nextEnergy, feedableEnergy: nextFeedable, activeDecor };
+                setSelectedGroup(updatedGroup);
+                setGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
+
+                // 異步寫回 GAS，維持 UI 高度響應
+                fetch(GAS_DEPLOY_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'updateEnergy',
+                        id: updatedGroup.id,
+                        energy: nextEnergy,
+                        feedableEnergy: nextFeedable,
+                        activeDecor: activeDecor
+                    })
+                });
+            };
+
+            const getPikminImage = (group) => {
+                const colorData = AssetMap[group.colorKey];
+                if (!colorData) return '';
+                if (group.energy === 0) return colorData.pot;
+
+                if (group.energy >= MAX_ENERGY && group.activeDecor) {
+                    // 若狀態帶有 GIFT_ 標記，強制回傳禮物圖示
+                    if (group.activeDecor.startsWith('GIFT_')) {
+                        return './assets/gift.png';
+                    }
+                    return colorData.decorImages[group.activeDecor];
+                }
+
+                return colorData.base;
+            };
+
+            const getStageName = (group) => {
+                if (group.energy === 0) return '花盆';
+                if (group.energy >= MAX_ENERGY) {
+                    if (group.activeDecor && group.activeDecor.startsWith('GIFT_')) return '拿取禮物中';
+                    return '造型皮克敏';
+                }
+                return '基本皮克敏';
+            };
+
+            return html`
+                <div className="container mx-auto p-6 max-w-6xl min-h-screen">
+                    <header className="glassmorphism rounded-3xl p-6 mb-8 flex justify-between items-center">
+                        <div>
+                            <h1 className="text-3xl font-black text-green-800 tracking-wide">🌱 Pikmin Growth Center</h1>
+                            <p className="text-green-600 font-bold mt-1">班級加分與皮克敏養成系統</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <button 
+                                onClick=${fetchAllData} 
+                                disabled=${loading} 
+                                className="p-3 bg-white/50 hover:bg-white rounded-xl shadow-sm text-green-700 transition-colors border border-green-200 flex items-center justify-center"
+                                title="同步最新資料庫狀態"
+                            >
+                                <svg className=${`w-6 h-6 ${loading ? 'animate-spin text-green-500' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                            </button>
+                            <input
+                                type="text"
+                                value=${newGroupName}
+                                onChange=${e => setNewGroupName(e.target.value)}
+                                placeholder="輸入新組別名稱"
+                                className="border-2 border-green-200 rounded-xl p-3 focus:outline-none focus:border-green-500 font-bold bg-white/70"
+                            />
+                            <button onClick=${handleAddGroup} disabled=${loading} className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-colors whitespace-nowrap">
+                                新增組別
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        ${groups.map(group => html`
+                            <div key=${group.id} onClick=${() => setSelectedGroup(group)}
+                                className="glassmorphism rounded-3xl p-6 cursor-pointer hover:-translate-y-2 transition-all duration-300 border-2 border-transparent hover:border-green-400 relative flex flex-col items-center">
+                                
+                                ${group.feedableEnergy > 0 && html`
+                                    <span className="absolute top-4 right-4 bg-red-500 text-white text-xs font-black px-3 py-1 rounded-full animate-pulse shadow-md">
+                                        精華 +${group.feedableEnergy}
+                                    </span>
+                                `}
+
+                                <div className="w-32 h-32 mb-4 relative flex justify-center items-end animate-float">
+                                    <img src=${getPikminImage(group)} className="w-full h-full object-contain drop-shadow-lg" />
+                                </div>
+                                
+                                <h2 className="text-2xl font-black text-gray-800 mb-1">${group.name}</h2>
+                                <p className="text-sm font-bold text-gray-500 mb-4 px-3 py-1 bg-white/50 rounded-full">
+                                    ${AssetMap[group.colorKey]?.name} - ${getStageName(group)}
+                                </p>
+                                
+                                <${HeartProgress} energy=${group.energy} />
+                            </div>
+                        `)}
+                    </div>
+
+                    ${selectedGroup && html`
+                        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+                            <div className="glassmorphism bg-white/90 rounded-[2rem] w-full max-w-md p-8 relative shadow-2xl border-4 border-white">
+                                <button onClick=${() => setSelectedGroup(null)} className="absolute top-5 right-5 text-gray-400 hover:text-gray-700 bg-gray-100 rounded-full p-2 transition-colors">
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+
+                                <div className="flex flex-col items-center mb-8">
+                                    <h3 className="text-3xl font-black text-gray-800 mb-2">${selectedGroup.name}</h3>
+                                    <p className="text-green-600 font-bold bg-green-100 px-4 py-1 rounded-full mb-6">${getStageName(selectedGroup)}</p>
+                                    
+                                    ${selectedGroup.activeDecor && selectedGroup.activeDecor.startsWith('GIFT_') ? (() => {
+                        const parts = selectedGroup.activeDecor.split('_');
+                        const timestamp = parseInt(parts[1], 10);
+                        const remain = Math.max(0, GIFT_DURATION_MS - (now - timestamp));
+                        const mins = Math.floor(remain / 60000).toString().padStart(2, '0');
+                        const secs = Math.floor((remain % 60000) / 1000).toString().padStart(2, '0');
+                        return html`<div className="text-red-500 font-black text-2xl mb-4 animate-pulse bg-red-50 px-4 py-2 rounded-xl border-2 border-red-200 shadow-sm">倒數 ${mins}:${secs}</div>`;
+                    })() : ''}
+
+                                    <div className=${`w-48 h-48 flex justify-center items-center ${animating ? 'animate-jump' : ''}`}>
+                                        <img src=${getPikminImage(selectedGroup)} className="w-full h-full object-contain drop-shadow-2xl" />
+                                    </div>
+                                </div>
+
+                                <div className="bg-green-50/50 rounded-2xl p-6 mb-6 border border-green-100">
+                                    <div className="flex flex-col items-center gap-4 mb-4">
+                                        <span className="font-bold text-gray-600">好感度進度 (${selectedGroup.energy}/${MAX_ENERGY})</span>
+                                        <${HeartProgress} energy=${selectedGroup.energy} />
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick=${handleFeed} 
+                                    disabled=${selectedGroup.feedableEnergy <= 0 || selectedGroup.energy >= MAX_ENERGY}
+                                    className="w-full bg-gradient-to-r from-green-400 to-emerald-500 disabled:from-gray-300 disabled:to-gray-400 hover:from-green-500 hover:to-emerald-600 text-white font-black py-4 rounded-2xl shadow-lg text-xl active:scale-95 transition-all flex justify-center items-center gap-2"
+                                >
+                                    ${selectedGroup.energy >= MAX_ENERGY ? '已達滿好感' : (selectedGroup.feedableEnergy > 0 ? `餵食精華 (剩餘: ${selectedGroup.feedableEnergy})` : '目前無精華可餵')}
+                                </button>
+
+                                <div className="mt-6 text-center">
+                                    <button onClick=${() => handleDeleteGroup(selectedGroup.id)} className="text-red-400 text-sm font-bold hover:text-red-600 transition-colors">
+                                        拔除此皮克敏 (刪除組別)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `}
+
+                    ${loading && html`
+                        <div className="fixed inset-0 bg-white/80 backdrop-blur-md flex flex-col justify-center items-center z-[100]">
+                            <div className="text-4xl animate-bounce mb-4">🌱</div>
+                            <h2 className="text-2xl font-black text-green-700 tracking-widest">連線同步中...</h2>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(html`<${App} />`);
+    </script>
+</body>
+
+</html>
