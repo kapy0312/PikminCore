@@ -220,14 +220,15 @@
             useEffect(() => {
                 groups.forEach(group => {
                     if (group.energy >= MAX_ENERGY && group.activeDecor && group.activeDecor.startsWith('GIFT_')) {
-                        const parts = group.activeDecor.split('_');
-                        const timestamp = parseInt(parts[1], 10);
-                        // 將索引 2 之後的所有片段重新用底線連接，修復 'chef_hat' 被截斷的問題
-                        const finalDecor = parts.slice(2).join('_');
+                        // 使用正規表達式精準提取：匹配 'GIFT_' + '數字時間戳' + '_' + '剩餘所有字串(無論多少底線)'
+                        const match = group.activeDecor.match(/^GIFT_(\d+)_(.+)$/);
+                        if (!match) return; // 防呆機制
+
+                        const timestamp = parseInt(match[1], 10);
+                        const finalDecor = match[2]; // 絕對精準抓取 'chef_hat' 或任何帶底線的名稱
 
                         if (Date.now() - timestamp >= GIFT_DURATION_MS) {
                             const updatedGroup = { ...group, activeDecor: finalDecor };
-                            setGroups(prev => prev.map(g => g.id === group.id ? updatedGroup : g));
 
                             if (selectedGroup && selectedGroup.id === group.id) {
                                 setSelectedGroup(updatedGroup);
