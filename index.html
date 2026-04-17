@@ -75,7 +75,7 @@
         const GAS_DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbxVNGtjwbAKOI2T7cluSNgGHxqIbtDidhIT3OSBuubfxP-l81vYzKCnVGsv78fPLFFieg/exec'; // 部署後替換
         const MAX_ENERGY = 20;
         const GIFT_DURATION_MS = 30 * 60 * 1000; // 禮物倒數 30 分鐘 (毫秒)
-        
+
         // SVG 生成器 (Placeholder)，未來可輕易替換為 './assets/red_base.png' 等實體路徑
         const generateSvg = (bg, text) => `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${encodeURIComponent(bg)}" rx="20"/><text x="50" y="50" font-family="sans-serif" font-weight="bold" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">${encodeURIComponent(text)}</text></svg>`;
 
@@ -222,7 +222,8 @@
                     if (group.energy >= MAX_ENERGY && group.activeDecor && group.activeDecor.startsWith('GIFT_')) {
                         const parts = group.activeDecor.split('_');
                         const timestamp = parseInt(parts[1], 10);
-                        const finalDecor = parts[2];
+                        // 將索引 2 之後的所有片段重新用底線連接，修復 'chef_hat' 被截斷的問題
+                        const finalDecor = parts.slice(2).join('_');
 
                         if (Date.now() - timestamp >= GIFT_DURATION_MS) {
                             const updatedGroup = { ...group, activeDecor: finalDecor };
