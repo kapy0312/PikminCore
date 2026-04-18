@@ -62,6 +62,72 @@
         .heart-clip {
             clip-path: path('M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z');
         }
+
+        /* 愛心噴發軌跡特效 */
+        @keyframes floatUp1 {
+            0% {
+                opacity: 0;
+                transform: translate(0, 0) scale(0.5);
+            }
+
+            30% {
+                opacity: 1;
+                transform: translate(-25px, -20px) scale(1.2);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translate(-40px, -60px) scale(1);
+            }
+        }
+
+        @keyframes floatUp2 {
+            0% {
+                opacity: 0;
+                transform: translate(0, 0) scale(0.5);
+            }
+
+            30% {
+                opacity: 1;
+                transform: translate(25px, -15px) scale(1.1);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translate(40px, -50px) scale(0.9);
+            }
+        }
+
+        @keyframes floatUp3 {
+            0% {
+                opacity: 0;
+                transform: translate(0, 0) scale(0.5);
+            }
+
+            30% {
+                opacity: 1;
+                transform: translate(0px, -30px) scale(1.3);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translate(10px, -80px) scale(1);
+            }
+        }
+
+        .anim-heart-1 {
+            animation: floatUp1 0.8s ease-out forwards;
+        }
+
+        .anim-heart-2 {
+            animation: floatUp2 0.8s ease-out forwards;
+            animation-delay: 0.1s;
+        }
+
+        .anim-heart-3 {
+            animation: floatUp3 0.8s ease-out forwards;
+            animation-delay: 0.2s;
+        }
     </style>
 </head>
 
@@ -74,6 +140,30 @@
 
         const GAS_DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbwtx1yag2PSNVXDLs_6LIimG2bMbDdXKUVZhBVSJN-rJR48UDwk6wA9g6Ke4AXxmu7hVw/exec'; // 部署後替換
         const GIFT_DURATION_MS = 30 * 60 * 1000; // 禮物倒數 30 分鐘 (毫秒)
+
+        // --- 音量控制區 (範圍限制: 0.0 ~ 1.0) ---
+        const VOL_BGM = 1.0; // 背景音樂音量 (建議調低以突顯叫聲)
+        const VOL_SFX = 0.8;  // 皮克敏叫聲音量 (1.0 為網頁極限最大值)
+
+        // 音效控制系統
+        const AudioController = {
+            bgm: new Audio('./audio/Walking (Map Theme) - Pikmin Bloom OST (Audio).mp3'),
+            sfxList: Array.from({ length: 9 }, (_, i) => `./audio/皮克敏叫聲${i + 1}.mp3`),
+            bgmStarted: false,
+            playBgm() {
+                if (this.bgmStarted) return;
+                this.bgm.loop = true;
+                this.bgm.volume = VOL_BGM;
+                this.bgm.play().catch(e => console.warn("BGM Play Blocked:", e));
+                this.bgmStarted = true;
+            },
+            playPikminSound() {
+                const randomSfx = this.sfxList[Math.floor(Math.random() * this.sfxList.length)];
+                const sfx = new Audio(randomSfx);
+                sfx.volume = VOL_SFX;
+                sfx.play().catch(e => console.warn("SFX Play Blocked:", e));
+            }
+        };
 
         // 建立造型英文轉中文的字典 (需求 1)
         const DecorNameMap = {
@@ -117,9 +207,37 @@
             const [newGroupName, setNewGroupName] = useState('');
             const [selectedGroup, setSelectedGroup] = useState(null);
             const [animating, setAnimating] = useState(false);
+            const [heartAnimating, setHeartAnimating] = useState(false); // 獨立控制愛心特效生命週期
             const [now, setNow] = useState(Date.now());
 
             const processedGiftsRef = useRef(new Set());
+
+            // 監聽全域首次點擊，啟動背景音樂 (繞過瀏覽器 Auto-play 限制)
+            useEffect(() => {
+                const startBgmOnFirstInteract = () => {
+                    AudioController.playBgm();
+                    window.removeEventListener('click', startBgmOnFirstInteract);
+                };
+                window.addEventListener('click', startBgmOnFirstInteract);
+                return () => window.removeEventListener('click', startBgmOnFirstInteract);
+            }, []);
+
+            // 點擊皮克敏圖片的互動邏輯 (發出聲音 + 跳躍動畫 + 愛心特效)
+            const handlePikminInteract = () => {
+                if (animating) return;
+
+                // 只有當能量大於 0 (已經不是花盆) 時，才觸發進階互動
+                if (selectedGroup && selectedGroup.energy > 0) {
+                    AudioController.playPikminSound();
+
+                    // 觸發愛心噴發 (設定為 800ms 後移除 DOM，匹配 CSS 動畫長度)
+                    setHeartAnimating(true);
+                    setTimeout(() => setHeartAnimating(false), 800);
+                }
+
+                setAnimating(true);
+                setTimeout(() => setAnimating(false), 400); // 基礎跳躍動畫維持 400ms
+            };
 
             useEffect(() => {
                 const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -233,6 +351,15 @@
 
             const handleFeed = () => {
                 if (!selectedGroup || selectedGroup.feedableEnergy <= 0 || animating) return;
+
+                // 播放隨機皮克敏叫聲
+                AudioController.playPikminSound();
+
+                // 觸發愛心噴發特效 (花盆狀態不顯示愛心)
+                if (selectedGroup.energy > 0) {
+                    setHeartAnimating(true);
+                    setTimeout(() => setHeartAnimating(false), 800);
+                }
 
                 setAnimating(true);
                 setTimeout(() => setAnimating(false), 400);
@@ -415,10 +542,29 @@
                                         </div>
                                     ` : null}
 
-                                    <div className=${`w-48 h-48 relative flex justify-center items-center ${animating ? 'animate-jump' : ''}`}>
-                                        <img src=${getPikminImage(selectedGroup)} className="w-full h-full object-contain drop-shadow-2xl" />
+                                    <div 
+                                        onClick=${handlePikminInteract}
+                                        className=${`w-48 h-48 relative flex justify-center items-center cursor-pointer ${animating ? 'animate-jump' : ''}`}
+                                        title="點擊與皮克敏互動"
+                                    >
+                                        <img src=${getPikminImage(selectedGroup)} className="w-full h-full object-contain drop-shadow-2xl z-10" />
+                                        
+                                        ${heartAnimating ? html`
+                                            <div className="absolute inset-0 pointer-events-none flex justify-center items-center z-20">
+                                                <svg className="absolute text-pink-400 w-10 h-10 anim-heart-1" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                                </svg>
+                                                <svg className="absolute text-red-500 w-8 h-8 anim-heart-2" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                                </svg>
+                                                <svg className="absolute text-pink-300 w-12 h-12 anim-heart-3" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                                </svg>
+                                            </div>
+                                        ` : null}
+
                                         ${(selectedGroup.activeDecor && selectedGroup.activeDecor.startsWith('GIFT_')) ? html`
-                                            <div className="absolute -bottom-4 -right-4 w-16 h-16 z-10 animate-bounce">
+                                            <div className="absolute -bottom-4 -right-4 w-16 h-16 z-30 animate-bounce">
                                                 <img src="./assets/gift.png" className="w-full h-full object-contain drop-shadow-xl" />
                                             </div>
                                         ` : null}
