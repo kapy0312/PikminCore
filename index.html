@@ -138,8 +138,8 @@
         const { useState, useEffect, useCallback, useRef, createElement } = React;
         const html = htm.bind(createElement);
 
-        const GAS_DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbwtx1yag2PSNVXDLs_6LIimG2bMbDdXKUVZhBVSJN-rJR48UDwk6wA9g6Ke4AXxmu7hVw/exec'; // 部署後替換
-        const GIFT_DURATION_MS = 30 * 60 * 1000; // 禮物倒數 30 分鐘 (毫秒)
+        const GAS_DEPLOY_URL = 'https://script.google.com/macros/s/AKfycbwMXaQAke2Q5GHTV3r232uYGK96S9mzpeSJPCrVU0GI0o-GSEj2cOPDCDzjgnoImTz88Q/exec'; // 部署後替換
+        // const GIFT_DURATION_MS = 30 * 60 * 1000; // 禮物倒數 30 分鐘 (毫秒)
 
         // --- 音量控制區 (範圍限制: 0.0 ~ 1.0) ---
         const VOL_BGM = 1.0; // 背景音樂音量 (建議調低以突顯叫聲)
@@ -202,7 +202,7 @@
 
         function App() {
             const [groups, setGroups] = useState([]);
-            const [appConfig, setAppConfig] = useState({ heartCapacity: 5, maxEnergy: 20 });
+            const [appConfig, setAppConfig] = useState({ heartCapacity: 5, maxEnergy: 20, giftDurationSeconds: 1800 });
             const [loading, setLoading] = useState(true);
             const [newGroupName, setNewGroupName] = useState('');
             const [selectedGroup, setSelectedGroup] = useState(null);
@@ -253,7 +253,8 @@
                         const timestamp = parseInt(match[1], 10);
                         const finalDecor = match[2];
 
-                        if (Date.now() - timestamp >= GIFT_DURATION_MS && !processedGiftsRef.current.has(group.id)) {
+                        // 使用 appConfig.giftDurationSeconds 乘以 1000 轉換為毫秒計算
+                        if (Date.now() - timestamp >= (appConfig.giftDurationSeconds * 1000) && !processedGiftsRef.current.has(group.id)) {
                             processedGiftsRef.current.add(group.id);
 
                             console.log(`[系統日誌] 觸發進化，寫入最終造型: ${finalDecor}`);
@@ -278,7 +279,7 @@
                         }
                     }
                 });
-            }, [groups, now, selectedGroup]);
+            }, [groups, now, selectedGroup, appConfig]); // 將 appConfig 加入依賴陣列
 
             const fetchAllData = useCallback(async () => {
                 setLoading(true);
@@ -433,7 +434,8 @@
                 const match = activeDecor.match(/^GIFT_(\d+)_(.+)$/);
                 if (!match) return '';
                 const timestamp = parseInt(match[1], 10);
-                const remain = Math.max(0, GIFT_DURATION_MS - (now - timestamp));
+                // 依照設定檔的秒數計算剩餘時間
+                const remain = Math.max(0, (appConfig.giftDurationSeconds * 1000) - (now - timestamp));
                 const mins = Math.floor(remain / 60000).toString().padStart(2, '0');
                 const secs = Math.floor((remain % 60000) / 1000).toString().padStart(2, '0');
                 return `${mins}:${secs}`;
