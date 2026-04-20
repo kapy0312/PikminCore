@@ -128,6 +128,58 @@
             animation: floatUp3 0.8s ease-out forwards;
             animation-delay: 0.2s;
         }
+
+        /* 照片合成 Modal 動畫 */
+        @keyframes composeFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.92) translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .compose-modal-enter {
+            animation: composeFadeIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        .btn-compose {
+            background: linear-gradient(135deg, #f59e0b, #f97316, #ec4899, #8b5cf6);
+            background-size: 200% auto;
+            transition: background-position 0.5s ease, transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .btn-compose:hover:not(:disabled) {
+            background-position: right center;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(249, 115, 22, 0.4);
+        }
+
+        .btn-compose:active:not(:disabled) {
+            transform: scale(0.97);
+        }
+
+        @keyframes composeSpin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .compose-loading-ring-sm {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: composeSpin 0.8s linear infinite;
+        }
     </style>
 </head>
 
@@ -172,6 +224,82 @@
             'kimchi': '泡菜'
         };
 
+        // ===== 照片合成設定（依你的 backPhoto.png 白框位置調整） =====
+        const PHOTO_AREA = { x: 0.02, y: 0.026, w: 0.633, h: 0.948 };
+        const PIKMIN_SCALE = 0.22;   // 皮克敏佔背景圖寬度的比例
+        const PIKMIN_OFFSET = { x: 8, y: 8 }; // 左下角微調偏移(px)
+
+        const loadImage = (src) => new Promise((resolve, reject) => {
+            // data URL 直接載入即可（上傳的照片）
+            if (src.startsWith('data:')) {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error(`無法載入: ${src}`));
+                img.src = src;
+                return;
+            }
+            // 本地路徑圖片：先 fetch 成 blob，再轉 objectURL 載入
+            // 這樣畫到 canvas 不會造成 tainted
+            fetch(src)
+                .then(r => r.blob())
+                .then(blob => {
+                    const objectURL = URL.createObjectURL(blob);
+                    const img = new Image();
+                    img.onload = () => {
+                        URL.revokeObjectURL(objectURL); // 用完釋放記憶體
+                        resolve(img);
+                    };
+                    img.onerror = () => reject(new Error(`無法載入: ${src}`));
+                    img.src = objectURL;
+                })
+                .catch(() => reject(new Error(`無法載入: ${src}`)));
+        });
+
+        const readFileAsDataURL = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = () => reject(new Error('檔案讀取失敗'));
+            reader.readAsDataURL(file);
+        });
+
+        const composePhoto = async (pikminImageSrc, uploadedFile) => {
+            const uploadedDataURL = await readFileAsDataURL(uploadedFile);
+            const [bgImg, uploadedImg, pikminImg] = await Promise.all([
+                loadImage('./assets/backPhoto.png'),
+                loadImage(uploadedDataURL),
+                loadImage(pikminImageSrc),
+            ]);
+            const canvas = document.createElement('canvas');
+            canvas.width = bgImg.naturalWidth;
+            canvas.height = bgImg.naturalHeight;
+            const ctx = canvas.getContext('2d');
+
+            // 第一層：背景
+            ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+
+            // 第二層：上傳照片 cover fit 進白色區塊
+            const px = canvas.width * PHOTO_AREA.x;
+            const py = canvas.height * PHOTO_AREA.y;
+            const pw = canvas.width * PHOTO_AREA.w;
+            const ph = canvas.height * PHOTO_AREA.h;
+            const scale = Math.max(pw / uploadedImg.naturalWidth, ph / uploadedImg.naturalHeight);
+            const drawW = uploadedImg.naturalWidth * scale;
+            const drawH = uploadedImg.naturalHeight * scale;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(px, py, pw, ph);
+            ctx.clip();
+            ctx.drawImage(uploadedImg, px + (pw - drawW) / 2, py + (ph - drawH) / 2, drawW, drawH);
+            ctx.restore();
+
+            // 第三層：皮克敏貼左下角
+            const pikminW = canvas.width * PIKMIN_SCALE;
+            const pikminH = (pikminImg.naturalHeight / pikminImg.naturalWidth) * pikminW;
+            ctx.drawImage(pikminImg, px + PIKMIN_OFFSET.x, py + ph - pikminH - PIKMIN_OFFSET.y, pikminW, pikminH);
+
+            return canvas.toDataURL('image/png');
+        };
+
         const AssetMap = {
             red: { colorCode: '#EF4444', name: '紅皮克敏', pot: './assets/red_pot.png', base: './assets/red_base.png', decors: ['chef_hat', 'cup'], decorImages: { 'chef_hat': './assets/red_chef_hat.png', 'cup': './assets/red_cup.png' } },
             yellow: { colorCode: '#F59E0B', name: '黃皮克敏', pot: './assets/yellow_pot.png', base: './assets/yellow_base.png', decors: ['chef_hat', 'cup'], decorImages: { 'chef_hat': './assets/yellow_chef_hat.png', 'cup': './assets/yellow_cup.png' } },
@@ -212,6 +340,10 @@
 
             const processedGiftsRef = useRef(new Set());
 
+            const fileInputRef = useRef(null);
+            const [composedDataURL, setComposedDataURL] = useState(null);
+            const [showComposeResult, setShowComposeResult] = useState(false);
+            const [isComposing, setIsComposing] = useState(false);
             // 監聽全域首次點擊，啟動背景音樂 (繞過瀏覽器 Auto-play 限制)
             useEffect(() => {
                 const startBgmOnFirstInteract = () => {
@@ -328,6 +460,7 @@
                     method: 'POST',
                     body: JSON.stringify({ action: 'deleteGroup', id })
                 });
+                setShowComposeResult(false);
             };
 
             // 新增功能 2: 修改組別名稱 (支援 Optimistic UI)
@@ -441,9 +574,42 @@
                 return `${mins}:${secs}`;
             };
 
+            const handleComposeClick = () => {
+                if (!selectedGroup || isComposing) return;
+                fileInputRef.current.value = '';
+                fileInputRef.current.click();
+            };
+
+            const handleFileSelected = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (!['image/png', 'image/jpeg'].includes(file.type)) {
+                    alert('❌ 請選擇 PNG 或 JPG 格式的圖片！');
+                    return;
+                }
+                setIsComposing(true);
+                try {
+                    const dataURL = await composePhoto(getPikminImage(selectedGroup), file);
+                    setComposedDataURL(dataURL);
+                    setShowComposeResult(true);
+                } catch (err) {
+                    alert(`⚠️ 照片合成失敗：${err.message}`);
+                } finally {
+                    setIsComposing(false);
+                }
+            };
+
             return html`
                 <div className="container mx-auto p-6 max-w-6xl min-h-screen">
                     
+                    <input
+                        ref=${fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg"
+                        style=${{ display: 'none' }}
+                        onChange=${handleFileSelected}
+                    />
+
                     <a 
                         href="https://docs.google.com/spreadsheets/d/1Xu6WmzwVUjkd0-nhuIF_BbqPs8S8ZpwEWWDPUwWX1GE/edit?gid=1031061317#gid=1031061317" 
                         target="_blank" 
@@ -590,11 +756,61 @@
                                     ${selectedGroup.energy >= appConfig.maxEnergy ? '已達滿好感' : (selectedGroup.feedableEnergy > 0 ? `餵食精華 (剩餘: ${selectedGroup.feedableEnergy})` : '目前無精華可餵')}
                                 </button>
 
+                                <button
+                                    onClick=${handleComposeClick}
+                                    disabled=${isComposing}
+                                    className="btn-compose w-full text-white font-black py-4 rounded-2xl shadow-lg text-lg active:scale-95 transition-all flex justify-center items-center gap-2 mt-3 disabled:opacity-60"
+                                >
+                                    ${isComposing ? html`
+                                       <span className="compose-loading-ring-sm" style=${{ marginRight: '8px' }}></span>
+                                        合成中...
+                                    ` : '📸 製作成長紀念照'}
+                                </button>
+
                                 <div className="mt-6 text-center">
                                     <button onClick=${() => handleDeleteGroup(selectedGroup.id)} className="text-red-400 text-sm font-bold hover:text-red-600 transition-colors">
                                         拔除此皮克敏 (刪除組別)
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+                    ` : null}
+
+                    ${showComposeResult && composedDataURL ? html`
+                        <div
+                            className="fixed inset-0 z-[200] flex flex-col justify-center items-center p-4"
+                            style=${{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(16px)' }}
+                            onClick=${(e) => { if (e.target === e.currentTarget) setShowComposeResult(false); }}
+                        >
+                            <div className="compose-modal-enter glassmorphism bg-white/20 rounded-3xl p-6 w-full max-w-lg border border-white/30 flex flex-col items-center gap-5">
+                                <div className="flex items-center gap-3 w-full">
+                                    <span className="text-3xl">📸</span>
+                                    <div>
+                                        <h3 className="text-xl font-black text-white">成長紀念照</h3>
+                                        <p className="text-white/70 text-sm font-bold">${selectedGroup ? selectedGroup.name : ''} 的專屬回憶</p>
+                                    </div>
+                                    <button onClick=${() => setShowComposeResult(false)} className="ml-auto bg-white/20 hover:bg-white/40 text-white rounded-full p-2 transition-colors">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    </button>
+                                </div>
+                                <img src=${composedDataURL} alt="合成紀念照" style=${{ borderRadius: '12px', maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} />
+                                <div className="flex gap-3 w-full">
+                                    <button
+                                        onClick=${() => {
+                        const a = document.createElement('a');
+                        a.href = composedDataURL;
+                        a.download = `皮克敏紀念照_${selectedGroup ? selectedGroup.name : ''}_${new Date().toLocaleDateString('zh-TW').replace(/\//g, '')}.png`;
+                        a.click();
+                    }}
+                                        className="flex-1 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white font-black py-3 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                                    >
+                                        ⬇️ 儲存照片
+                                    </button>
+                                    <button onClick=${() => setShowComposeResult(false)} className="bg-white/20 hover:bg-white/40 text-white font-bold py-3 px-5 rounded-2xl transition-colors">
+                                        關閉
+                                    </button>
+                                </div>
+                                <p className="text-white/50 text-xs">長按圖片也可直接儲存</p>
                             </div>
                         </div>
                     ` : null}
